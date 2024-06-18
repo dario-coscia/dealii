@@ -59,7 +59,8 @@ namespace LinearAlgebra
  * (for the requirements on matrices and vectors in order to work with this
  * class, see the documentation of the Solver base class). The type of the
  * solution vector must be passed as template argument, and defaults to
- * dealii::Vector<double>.
+ * dealii::Vector<double>. The AdditionalData structure allows to control the
+ * type of residual for the stopping condition.
  *
  * @note The CG method requires a symmetric preconditioner (i.e., for example,
  * SOR is not a possible choice). There is a variant of the solver,
@@ -172,6 +173,15 @@ namespace LinearAlgebra
  * run the updates on the vectors according to a variant presented in
  * Algorithm 2.2 of @cite Chronopoulos1989 (but for a preconditioner), whereas
  * the operation after the loop performs a total of 7 reductions in parallel.
+ *
+ * <h5>Preconditioned residual</h5>
+ *
+ * @p AdditionalData allows you to choose between using the preconditioned
+ * or not preconditioned residual as stopping condition for the interative
+ * solver. This behavior can be overridden by using the flag
+ * AdditionalData::use_default_residual. A <tt>true</tt> value refers to the
+ * preconditioned residual, while <tt>false</tt> reverts
+ * it.
  */
 template <typename VectorType = Vector<double>>
 DEAL_II_CXX20_REQUIRES(concepts::is_vector_space_vector<VectorType>)
@@ -183,13 +193,24 @@ public:
    */
   using size_type = types::global_dof_index;
 
+
   /**
    * Standardized data struct to pipe additional data to the solver.
-   * Here, it does not store anything but just exists for consistency
-   * with the other solver classes.
    */
   struct AdditionalData
-  {};
+  {
+    /**
+     * Constructor. By default, set the residual of the stopping criterion
+     * to the default residual.
+     */
+    explicit AdditionalData(const bool use_default_residual = true);
+
+    /**
+     * Flag for the default residual that is used to measure convergence.
+     */
+    bool use_default_residual;
+  };
+
 
   /**
    * Constructor.
@@ -363,13 +384,24 @@ public:
    */
   using size_type = types::global_dof_index;
 
+
   /**
    * Standardized data struct to pipe additional data to the solver.
-   * Here, it does not store anything but just exists for consistency
-   * with the other solver classes.
    */
   struct AdditionalData
-  {};
+  {
+    /**
+     * Constructor. By default, set the residual of the stopping criterion
+     * to the default residual.
+     */
+    explicit AdditionalData(const bool use_default_residual = true);
+
+    /**
+     * Flag for the default residual that is used to measure convergence.
+     */
+    bool use_default_residual;
+  };
+
 
   /**
    * Constructor.
@@ -384,6 +416,12 @@ public:
    */
   SolverFlexibleCG(SolverControl        &cn,
                    const AdditionalData &data = AdditionalData());
+
+protected:
+  /**
+   * Additional parameters.
+   */
+  AdditionalData additional_data;
 };
 
 
@@ -394,6 +432,12 @@ public:
 #ifndef DOXYGEN
 
 
+template <typename VectorType>
+DEAL_II_CXX20_REQUIRES(concepts::is_vector_space_vector<VectorType>)
+inline SolverCG<VectorType>::AdditionalData::AdditionalData(
+  const bool use_default_residual)
+  : use_default_residual(use_default_residual)
+{}
 
 template <typename VectorType>
 DEAL_II_CXX20_REQUIRES(concepts::is_vector_space_vector<VectorType>)
@@ -476,6 +520,7 @@ inline void SolverCG<VectorType>::compute_eigs_and_cond(
 
 namespace internal
 {
+
   namespace SolverCG
   {
     // This base class is used to select different variants of the conjugate
@@ -512,17 +557,20 @@ namespace internal
       VectorType &v;
       VectorType &z;
 
-      Number r_dot_preconditioner_dot_r;
-      Number alpha;
-      Number beta;
-      double residual_norm;
-      Number previous_alpha;
+      Number     r_dot_preconditioner_dot_r;
+      Number     alpha;
+      Number     beta;
+      double     residual_norm;
+      Number     previous_alpha;
+      const bool use_default_residual;
+
 
       IterationWorkerBase(const MatrixType         &A,
                           const PreconditionerType &preconditioner,
                           const bool                flexible,
                           VectorMemory<VectorType> &memory,
-                          VectorType               &x)
+                          VectorType               &x,
+                          const bool               &use_default_residual)
         : A(A)
         , preconditioner(preconditioner)
         , flexible(flexible)
@@ -540,6 +588,7 @@ namespace internal
         , beta(Number())
         , residual_norm(0.0)
         , previous_alpha(Number())
+        , use_default_residual(use_default_residual)
       {}
 
       void
@@ -581,12 +630,19 @@ namespace internal
       using BaseClass =
         IterationWorkerBase<VectorType, MatrixType, PreconditionerType>;
 
+
       IterationWorker(const MatrixType         &A,
                       const PreconditionerType &preconditioner,
                       const bool                flexible,
                       VectorMemory<VectorType> &memory,
-                      VectorType               &x)
-        : BaseClass(A, preconditioner, flexible, memory, x)
+                      VectorType               &x,
+                      const bool               &use_default_residual)
+        : BaseClass(A,
+                    preconditioner,
+                    flexible,
+                    memory,
+                    x,
+                    use_default_residual)
       {}
 
       using BaseClass::A;
@@ -597,6 +653,7 @@ namespace internal
       using BaseClass::r;
       using BaseClass::r_dot_preconditioner_dot_r;
       using BaseClass::residual_norm;
+      using BaseClass::use_default_residual;
       using BaseClass::v;
       using BaseClass::x;
       using BaseClass::z;
@@ -645,7 +702,18 @@ namespace internal
         alpha                = r_dot_preconditioner_dot_r / p_dot_A_dot_p;
 
         x.add(alpha, p);
-        residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
+
+        // compute the residual norm with preconditioned residual
+        if (use_default_residual)
+          {
+            residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
+          }
+        // compute the residual norm with the un-preconditioned residual, i.e.
+        // compute l2 norm of Ax - b.
+        else
+          {
+            residual_norm = r.l2_norm();
+          }
       }
 
       void
@@ -710,11 +778,11 @@ namespace internal
       PreconditionerType,
       std::enable_if_t<has_vmult_functions<MatrixType, VectorType> &&
                          (has_apply_to_subrange<PreconditionerType> ||
-                          has_apply<PreconditionerType>)&&std::
-                           is_same_v<VectorType,
-                                     LinearAlgebra::distributed::Vector<
-                                       typename VectorType::value_type,
-                                       MemorySpace::Host>>,
+                          has_apply<PreconditionerType>) &&
+                         std::is_same_v<VectorType,
+                                        LinearAlgebra::distributed::Vector<
+                                          typename VectorType::value_type,
+                                          MemorySpace::Host>>,
                        int>>
       : public IterationWorkerBase<VectorType, MatrixType, PreconditionerType>
     {
@@ -727,13 +795,15 @@ namespace internal
                       const PreconditionerType &preconditioner,
                       const bool                flexible,
                       VectorMemory<VectorType> &memory,
-                      VectorType               &x)
+                      VectorType               &x,
+                      const bool               &use_default_residual)
         : IterationWorkerBase<VectorType, MatrixType, PreconditionerType>(
             A,
             preconditioner,
             flexible,
             memory,
-            x)
+            x,
+            use_default_residual)
         , next_r_dot_preconditioner_dot_r(0.)
         , previous_beta(0.)
       {}
@@ -1296,8 +1366,12 @@ void SolverCG<VectorType>::solve(const MatrixType         &A,
 
   internal::SolverCG::
     IterationWorker<VectorType, MatrixType, PreconditionerType>
-      worker(
-        A, preconditioner, determine_beta_by_flexible_formula, this->memory, x);
+      worker(A,
+             preconditioner,
+             determine_beta_by_flexible_formula,
+             this->memory,
+             x,
+             additional_data.use_default_residual);
 
   worker.startup(b);
 
@@ -1397,25 +1471,34 @@ boost::signals2::connection SolverCG<VectorType>::connect_eigenvalues_slot(
 
 template <typename VectorType>
 DEAL_II_CXX20_REQUIRES(concepts::is_vector_space_vector<VectorType>)
+SolverFlexibleCG<VectorType>::AdditionalData::AdditionalData(
+  const bool use_default_residual)
+  : use_default_residual(use_default_residual)
+{}
+
+
+template <typename VectorType>
+DEAL_II_CXX20_REQUIRES(concepts::is_vector_space_vector<VectorType>)
 SolverFlexibleCG<VectorType>::SolverFlexibleCG(SolverControl            &cn,
                                                VectorMemory<VectorType> &mem,
-                                               const AdditionalData &)
+                                               const AdditionalData     &data)
   : SolverCG<VectorType>(cn, mem)
 {
   this->determine_beta_by_flexible_formula = true;
+  this->additional_data                    = data;
 }
 
 
 
 template <typename VectorType>
 DEAL_II_CXX20_REQUIRES(concepts::is_vector_space_vector<VectorType>)
-SolverFlexibleCG<VectorType>::SolverFlexibleCG(SolverControl &cn,
-                                               const AdditionalData &)
+SolverFlexibleCG<VectorType>::SolverFlexibleCG(SolverControl        &cn,
+                                               const AdditionalData &data)
   : SolverCG<VectorType>(cn)
 {
   this->determine_beta_by_flexible_formula = true;
+  this->additional_data                    = data;
 }
-
 
 
 #endif // DOXYGEN
