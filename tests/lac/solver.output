@@ -4,7 +4,7 @@ DEAL::SOR-diff:0.000
 DEAL:no-fail:cg::Starting value 3.000
 DEAL:no-fail:cg::Convergence step 3 value 4.807e-17
 DEAL:no-fail:cg::Starting value 3.000
-DEAL:no-fail:cg::Convergence step 3 value 4.807e-17
+DEAL:no-fail:cg::Convergence step 3 value 9.679e-16
 DEAL:no-fail:Bicgstab::Starting value 3.000
 DEAL:no-fail:Bicgstab::Convergence step 3 value 1.104e-17
 DEAL:no-fail:GMRES::Starting value 3.000
@@ -22,7 +22,7 @@ DEAL:no:Richardson::Convergence step 24 value 0.0007118
 DEAL:no:cg::Starting value 3.000
 DEAL:no:cg::Convergence step 3 value 4.807e-17
 DEAL:no:cg::Starting value 3.000
-DEAL:no:cg::Convergence step 3 value 4.807e-17
+DEAL:no:cg::Convergence step 3 value 9.679e-16
 DEAL:no:Bicgstab::Starting value 3.000
 DEAL:no:Bicgstab::Convergence step 3 value 1.104e-17
 DEAL:no:GMRES::Starting value 3.000
@@ -40,7 +40,7 @@ DEAL:rich:Richardson::Convergence step 42 value 0.0008696
 DEAL:rich:cg::Starting value 3.000
 DEAL:rich:cg::Convergence step 3 value 2.871e-16
 DEAL:rich:cg::Starting value 3.000
-DEAL:rich:cg::Convergence step 3 value 2.871e-16
+DEAL:rich:cg::Convergence step 3 value 1.691e-15
 DEAL:rich:Bicgstab::Starting value 3.000
 DEAL:rich:Bicgstab::Convergence step 3 value 3.238e-18
 DEAL:rich:GMRES::Starting value 1.800

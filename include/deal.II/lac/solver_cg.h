@@ -174,14 +174,18 @@ namespace LinearAlgebra
  * Algorithm 2.2 of @cite Chronopoulos1989 (but for a preconditioner), whereas
  * the operation after the loop performs a total of 7 reductions in parallel.
  *
- * <h5>Preconditioned residual</h5>
+ * <h3>Preconditioned residual</h3>
  *
- * @p AdditionalData allows you to choose between using the preconditioned
- * or not preconditioned residual as stopping condition for the interative
+ * @p AdditionalData allows you to choose between using the explicit
+ * or implicit residual as stopping condition for the interative
  * solver. This behavior can be overridden by using the flag
  * AdditionalData::use_default_residual. A <tt>true</tt> value refers to the
- * preconditioned residual, while <tt>false</tt> reverts
- * it.
+ * implicit residual, while <tt>false</tt> reverts
+ * it. More information on explicit and implicit residual stopping criteria
+ * can be found
+ * <a
+ * href="https://en.wikipedia.org/wiki/Conjugate_gradient_method#Explicit_residual_calculation">link
+ * here</a>.
  */
 template <typename VectorType = Vector<double>>
 DEAL_II_CXX20_REQUIRES(concepts::is_vector_space_vector<VectorType>)
@@ -540,11 +544,13 @@ namespace internal
       const PreconditionerType &preconditioner;
       const bool                flexible;
       VectorType               &x;
+      const VectorType         &b;
 
       typename VectorMemory<VectorType>::Pointer r_pointer;
       typename VectorMemory<VectorType>::Pointer p_pointer;
       typename VectorMemory<VectorType>::Pointer v_pointer;
       typename VectorMemory<VectorType>::Pointer z_pointer;
+      typename VectorMemory<VectorType>::Pointer explicit_r_pointer;
 
       // Define some aliases for simpler access, using the variables 'r' for
       // the residual b - A*x, 'p' for the search direction, and 'v' for the
@@ -556,6 +562,7 @@ namespace internal
       VectorType &p;
       VectorType &v;
       VectorType &z;
+      VectorType &explicit_r;
 
       Number     r_dot_preconditioner_dot_r;
       Number     alpha;
@@ -570,19 +577,23 @@ namespace internal
                           const bool                flexible,
                           VectorMemory<VectorType> &memory,
                           VectorType               &x,
+                          const VectorType         &b,
                           const bool               &use_default_residual)
         : A(A)
         , preconditioner(preconditioner)
         , flexible(flexible)
         , x(x)
+        , b(b)
         , r_pointer(memory)
         , p_pointer(memory)
         , v_pointer(memory)
         , z_pointer(memory)
+        , explicit_r_pointer(memory)
         , r(*r_pointer)
         , p(*p_pointer)
         , v(*v_pointer)
         , z(*z_pointer)
+        , explicit_r(*explicit_r_pointer)
         , r_dot_preconditioner_dot_r(Number())
         , alpha(Number())
         , beta(Number())
@@ -592,7 +603,7 @@ namespace internal
       {}
 
       void
-      startup(const VectorType &b)
+      startup()
       {
         // Initialize without setting the vector entries, as those would soon
         // be overwritten anyway
@@ -601,6 +612,8 @@ namespace internal
         v.reinit(x, true);
         if (flexible)
           z.reinit(x, true);
+        if (!use_default_residual)
+          explicit_r.reinit(x, true);
 
         // compute residual. if vector is zero, then short-circuit the full
         // computation
@@ -636,18 +649,22 @@ namespace internal
                       const bool                flexible,
                       VectorMemory<VectorType> &memory,
                       VectorType               &x,
+                      const VectorType         &b,
                       const bool               &use_default_residual)
         : BaseClass(A,
                     preconditioner,
                     flexible,
                     memory,
                     x,
+                    b,
                     use_default_residual)
       {}
 
       using BaseClass::A;
       using BaseClass::alpha;
+      using BaseClass::b;
       using BaseClass::beta;
+      using BaseClass::explicit_r;
       using BaseClass::p;
       using BaseClass::preconditioner;
       using BaseClass::r;
@@ -703,16 +720,21 @@ namespace internal
 
         x.add(alpha, p);
 
-        // compute the residual norm with preconditioned residual
+        // compute the residual norm with implicit residual
         if (use_default_residual)
           {
             residual_norm = std::sqrt(std::abs(r.add_and_dot(-alpha, v, r)));
           }
-        // compute the residual norm with the un-preconditioned residual, i.e.
+        // compute the residual norm with the explicit residual, i.e.
         // compute l2 norm of Ax - b.
         else
           {
-            residual_norm = r.l2_norm();
+            // compute the residual conjugate gradient update
+            r.add(-alpha, v);
+            // compute explicit residual
+            A.vmult(explicit_r, x);
+            explicit_r.add(-1, b);
+            residual_norm = explicit_r.l2_norm();
           }
       }
 
@@ -796,6 +818,7 @@ namespace internal
                       const bool                flexible,
                       VectorMemory<VectorType> &memory,
                       VectorType               &x,
+                      const VectorType         &b,
                       const bool               &use_default_residual)
         : IterationWorkerBase<VectorType, MatrixType, PreconditionerType>(
             A,
@@ -803,6 +826,7 @@ namespace internal
             flexible,
             memory,
             x,
+            b,
             use_default_residual)
         , next_r_dot_preconditioner_dot_r(0.)
         , previous_beta(0.)
@@ -1371,9 +1395,10 @@ void SolverCG<VectorType>::solve(const MatrixType         &A,
              determine_beta_by_flexible_formula,
              this->memory,
              x,
+             b,
              additional_data.use_default_residual);
 
-  worker.startup(b);
+  worker.startup();
 
   solver_state = this->iteration_status(0, worker.residual_norm, x);
   if (solver_state != SolverControl::iterate)
