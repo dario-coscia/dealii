@@ -1956,7 +1956,7 @@ namespace MatrixFreeTools
       data_cell;
 
     data_cell.dof_numbers               = {dof_no};
-    data_cell.quad_numbers              = {dof_no};
+    data_cell.quad_numbers              = {quad_no};
     data_cell.first_selected_components = {first_selected_component};
     data_cell.batch_type                = {0};
 
@@ -1992,7 +1992,7 @@ namespace MatrixFreeTools
       data_face;
 
     data_face.dof_numbers               = {dof_no, dof_no};
-    data_face.quad_numbers              = {dof_no, quad_no};
+    data_face.quad_numbers              = {quad_no, quad_no};
     data_face.first_selected_components = {first_selected_component,
                                            first_selected_component};
     data_face.batch_type                = {1, 2};
@@ -2054,7 +2054,7 @@ namespace MatrixFreeTools
       data_boundary;
 
     data_boundary.dof_numbers               = {dof_no};
-    data_boundary.quad_numbers              = {dof_no};
+    data_boundary.quad_numbers              = {quad_no};
     data_boundary.first_selected_components = {first_selected_component};
     data_boundary.batch_type                = {1};
 
@@ -2221,11 +2221,20 @@ namespace MatrixFreeTools
 
                   for (unsigned int v = 0; v < n_filled_lanes; ++v)
                     for (unsigned int bi = 0; bi < n_blocks; ++bi)
-                      constraints.distribute_local_to_global(
-                        matrices[bi][bj][v],
-                        dof_indices_mf[bi][v],
-                        dof_indices_mf[bj][v],
-                        matrix);
+                      if (bi == bj)
+                        // specialization for blocks on the diagonal
+                        // to writing into diagonal elements of the
+                        // matrix if the corresponding degree of freedom
+                        // is constrained, see also the documentation
+                        // of AffineConstraints::distribute_local_to_global()
+                        constraints.distribute_local_to_global(
+                          matrices[bi][bi][v], dof_indices_mf[bi][v], matrix);
+                      else
+                        constraints.distribute_local_to_global(
+                          matrices[bi][bj][v],
+                          dof_indices_mf[bi][v],
+                          dof_indices_mf[bj][v],
+                          matrix);
                 }
             }
         };
